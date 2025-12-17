@@ -247,3 +247,46 @@ h1 {
   overflow: auto;
   white-space: pre-wrap;
 }
+/* Обёртка доски */
+.chessboard-wrapper {
+  display: grid;
+  grid-template-columns: 24px auto;
+  grid-template-rows: auto 24px;
+  gap: 4px;
+  justify-content: start;
+  align-content: start;
+  margin-top: 10px;
+}
+
+/* Цифры слева */
+.board-ranks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 480px; /* 8 * 60px */
+  margin-right: 4px;
+}
+.board-ranks > div {
+  color: #aaa;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1;
+}
+
+/* Буквы снизу */
+.board-files {
+  display: flex;
+  justify-content: space-between;
+  width: 480px; /* 8 * 60px */
+  margin-top: 4px;
+  margin-left: 24px; /* ширина + отступ цифр */
+}
+.board-files > div {
+  color: #aaa;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1;
+  width: 60px;
+}

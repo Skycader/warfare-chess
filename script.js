@@ -566,21 +566,22 @@ function renderBoard() {
     }
   }
 
+  // ТОЛЬКО подсветка — НИКАКИХ МЕТОК!
   if (selectedPiece) {
     const [r, c] = selectedPiece;
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("highlight");
+      ?.classList.add("highlight");
   }
   for (const [r, c] of possibleMoves) {
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("move-possible");
+      ?.classList.add("move-possible");
   }
   for (const [r, c] of shootTargets) {
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("target");
+      ?.classList.add("target");
   }
 }
 
