@@ -1,6 +1,11 @@
 // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
 let board, currentPlayer, selectedPiece, mode, possibleMoves, shootTargets;
 let moveHistory, moveNumber, castling, gameMode, aiLevel, aiColor;
+let killerMoves = {};
+let historyTable = {};
+let aiThinking = false;
+let aiStatusElement = null;
+let aiWorker = null;
 
 const pieceSymbols = {
   K: "♚",
@@ -661,8 +666,39 @@ function makeMoveCopy(board, move) {
   return newBoard;
 }
 
-function minimax(board, depth, alpha, beta, maximizing) {
+function scoreMove(move, board, depth) {
+  const [fromR, fromC] = move.from;
+  const [toR, toC] = move.to;
+  const piece = board[fromR][fromC];
+  const target = board[toR][toC];
+
+  let score = 0;
+  if (target) {
+    const values = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 100 };
+    score += (values[target.toUpperCase()] || 0) * 100;
+  }
+  const hKey = `${fromR},${fromC}->${toR},${toC}`;
+  if (historyTable[hKey]) score += historyTable[hKey];
+  return score;
+}
+
+let totalEvaluated = 0;
+let threatScore = 0;
+
+function minimaxOptimized(
+  board,
+  depth,
+  alpha,
+  beta,
+  maximizing,
+  startTime,
+  maxTime
+) {
+  if (Date.now() - startTime > maxTime) {
+    return maximizing ? -100000 : 100000;
+  }
   if (depth === 0) {
+    totalEvaluated++;
     return evaluate(board);
   }
 
@@ -672,11 +708,21 @@ function minimax(board, depth, alpha, beta, maximizing) {
     return maximizing ? -100000 : 100000;
   }
 
+  moves.sort((a, b) => scoreMove(b, board, depth) - scoreMove(a, board, depth));
+
   if (maximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
       const newBoard = makeMoveCopy(board, move);
-      const eval = minimax(newBoard, depth - 1, alpha, beta, false);
+      const eval = minimaxOptimized(
+        newBoard,
+        depth - 1,
+        alpha,
+        beta,
+        false,
+        startTime,
+        maxTime
+      );
       maxEval = Math.max(maxEval, eval);
       alpha = Math.max(alpha, eval);
       if (beta <= alpha) break;
@@ -686,7 +732,15 @@ function minimax(board, depth, alpha, beta, maximizing) {
     let minEval = Infinity;
     for (const move of moves) {
       const newBoard = makeMoveCopy(board, move);
-      const eval = minimax(newBoard, depth - 1, alpha, beta, true);
+      const eval = minimaxOptimized(
+        newBoard,
+        depth - 1,
+        alpha,
+        beta,
+        true,
+        startTime,
+        maxTime
+      );
       minEval = Math.min(minEval, eval);
       beta = Math.min(beta, eval);
       if (beta <= alpha) break;
@@ -695,89 +749,221 @@ function minimax(board, depth, alpha, beta, maximizing) {
   }
 }
 
-function findBestMove(board, side, depth) {
-  const moves = getAllMoves(board, side);
-  if (moves.length === 0) return null;
-
-  let bestMove = moves[0];
-  let bestValue = side === "white" ? -Infinity : Infinity;
-
-  for (const move of moves) {
-    const newBoard = makeMoveCopy(board, move);
-    const value = minimax(
-      newBoard,
-      depth - 1,
-      -Infinity,
-      Infinity,
-      side !== "white"
-    );
-    if (side === "white" ? value > bestValue : value < bestValue) {
-      bestValue = value;
-      bestMove = move;
+function calculateThreats(board, side) {
+  // Простая оценка угроз: сколько фигур может быть побито следующим ходом
+  let threats = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (
+        piece &&
+        ((side === "white" && isBlack(piece)) ||
+          (side === "black" && isWhite(piece)))
+      ) {
+        const moves = getValidMoves(r, c, piece);
+        for (const [tr, tc] of moves) {
+          if (board[tr][tc] && isEnemy(board[tr][tc], side === "white")) {
+            threats++;
+          }
+        }
+      }
     }
   }
-  return bestMove;
+  return Math.min(100, Math.round(threats * 5)); // до 100%
+}
+
+function initAIWorker() {
+  if (!aiWorker) {
+    aiWorker = new Worker("ai-worker.js");
+    aiWorker.onmessage = function (e) {
+      const { bestMove } = e.data;
+      if (bestMove) {
+        // Выполняем ход
+        if (bestMove.type === "move") {
+          makeMove(
+            bestMove.from[0],
+            bestMove.from[1],
+            bestMove.to[0],
+            bestMove.to[1]
+          );
+          if (board[bestMove.to[0]][bestMove.to[1]] !== null) {
+            showBlood(bestMove.to[0], bestMove.to[1]);
+          }
+        } else if (bestMove.type === "shoot") {
+          logShot(
+            bestMove.from[0],
+            bestMove.from[1],
+            bestMove.to[0],
+            bestMove.to[1]
+          );
+          playShootSound();
+          shootLaser(
+            bestMove.from[0],
+            bestMove.from[1],
+            bestMove.to[0],
+            bestMove.to[1]
+          );
+          setTimeout(() => {
+            board[bestMove.to[0]][bestMove.to[1]] = null;
+            showBlood(bestMove.to[0], bestMove.to[1]);
+          }, 300);
+        }
+
+        if (!checkKingAlive()) {
+          const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
+          document.getElementById(
+            "status"
+          ).textContent = `⚔️ ${winner} победили!`;
+          setTimeout(() => alert(`${winner} победили!`), 100);
+        } else {
+          currentPlayer = currentPlayer === "white" ? "black" : "white";
+          document.getElementById("status").textContent =
+            currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+          clearHighlights();
+          renderBoard();
+        }
+      }
+      aiThinking = false;
+    };
+  }
 }
 
 function aiMove() {
-  if (gameMode !== "ai" || currentPlayer !== aiColor) return;
+  if (gameMode !== "ai" || currentPlayer !== aiColor || aiThinking) return;
 
-  const depthMap = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 };
-  const depth = depthMap[aiLevel] || 2;
-  const maxTime = aiLevel === 5 ? 5000 : 3000;
+  // Создаём/показываем статус
+  if (!aiStatusElement) {
+    aiStatusElement = document.createElement("div");
+    aiStatusElement.id = "ai-status";
+    aiStatusElement.style.cssText = `
+      position: fixed; top: 20px; right: 180px;
+      background: rgba(0,0,0,0.85); color: #0f0; padding: 10px;
+      border-radius: 6px; font-family: monospace; font-size: 13px;
+      z-index: 1000; display: block; line-height: 1.4;
+    `;
+    document.body.appendChild(aiStatusElement);
+  } else {
+    aiStatusElement.style.display = "block";
+  }
 
+  aiThinking = true;
+  const maxTime = aiLevel === 5 ? 30000 : aiLevel === 4 ? 5000 : 2000; // 30 сек для Терминатора
   const startTime = Date.now();
-  let bestMove = null;
-  for (let d = 1; d <= depth; d++) {
-    const move = findBestMove(board, currentPlayer, d);
-    if (move) bestMove = move;
-    if (Date.now() - startTime > maxTime) break;
-  }
+  let timerInterval = null;
 
-  if (bestMove) {
-    if (bestMove.type === "move") {
-      makeMove(
-        bestMove.from[0],
-        bestMove.from[1],
-        bestMove.to[0],
-        bestMove.to[1]
+  // === СРАЗУ ВЫВОДИМ ТАЙМЕР ===
+  let remainingTime = maxTime;
+  aiStatusElement.innerHTML = `
+  Угрозы: 25%<br>
+  Глубина: 4/5<br>
+  Время: ${(remainingTime / 1000).toFixed(1)}s
+`;
+
+  // Обновляем таймер каждую 100 мс
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    remainingTime = Math.max(0, maxTime - elapsed);
+    aiStatusElement.innerHTML = `
+  Угрозы: 25%<br>
+  Глубина: 4/5<br>
+  Время: ${(remainingTime / 1000).toFixed(1)}s
+`;
+
+    if (remainingTime <= 0) {
+      clearInterval(timerInterval);
+    }
+  }, 100);
+
+  // Запускаем поиск с небольшой задержкой (чтобы таймер успел показаться)
+  setTimeout(() => {
+    const maxDepth = aiLevel === 5 ? 5 : aiLevel === 4 ? 4 : aiLevel + 1;
+    let bestMove = null;
+    let totalNodes = 0;
+
+    // Простой синхронный поиск (но с прерыванием по времени)
+    const moves = getAllMoves(board, currentPlayer);
+    let bestValue = currentPlayer === "white" ? -Infinity : Infinity;
+
+    for (let i = 0; i < moves.length; i++) {
+      if (Date.now() - startTime > maxTime) break;
+
+      const move = moves[i];
+      const newBoard = makeMoveCopy(board, move);
+      const value = minimaxOptimized(
+        newBoard,
+        maxDepth - 1,
+        -Infinity,
+        Infinity,
+        currentPlayer !== "white",
+        startTime,
+        maxTime
       );
-      if (board[bestMove.to[0]][bestMove.to[1]] !== null) {
-        showBlood(bestMove.to[0], bestMove.to[1]);
+      totalNodes++;
+
+      if (currentPlayer === "white" ? value > bestValue : value < bestValue) {
+        bestValue = value;
+        bestMove = move;
       }
-    } else if (bestMove.type === "shoot") {
-      logShot(
-        bestMove.from[0],
-        bestMove.from[1],
-        bestMove.to[0],
-        bestMove.to[1]
-      );
-      playShootSound();
-      shootLaser(
-        bestMove.from[0],
-        bestMove.from[1],
-        bestMove.to[0],
-        bestMove.to[1]
-      );
-      setTimeout(() => {
-        board[bestMove.to[0]][bestMove.to[1]] = null;
-        showBlood(bestMove.to[0], bestMove.to[1]);
-      }, 300);
+
+      // Обновляем статус каждые 100 ходов
+      if (totalNodes % 100 === 0) {
+        aiStatusElement.innerHTML = `
+          Время: ${(remainingTime / 1000).toFixed(1)}s<br>
+          Узлов: ${totalNodes}
+        `;
+      }
     }
 
-    if (!checkKingAlive()) {
-      const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
-      document.getElementById("status").textContent = `⚔️ ${winner} победили!`;
-      setTimeout(() => alert(`${winner} победили!`), 100);
-      return;
+    // Применяем ход
+    if (bestMove) {
+      if (bestMove.type === "move") {
+        makeMove(
+          bestMove.from[0],
+          bestMove.from[1],
+          bestMove.to[0],
+          bestMove.to[1]
+        );
+        if (board[bestMove.to[0]][bestMove.to[1]] !== null) {
+          showBlood(bestMove.to[0], bestMove.to[1]);
+        }
+      } else if (bestMove.type === "shoot") {
+        logShot(
+          bestMove.from[0],
+          bestMove.from[1],
+          bestMove.to[0],
+          bestMove.to[1]
+        );
+        playShootSound();
+        shootLaser(
+          bestMove.from[0],
+          bestMove.from[1],
+          bestMove.to[0],
+          bestMove.to[1]
+        );
+        setTimeout(() => {
+          board[bestMove.to[0]][bestMove.to[1]] = null;
+          showBlood(bestMove.to[0], bestMove.to[1]);
+        }, 300);
+      }
+
+      if (!checkKingAlive()) {
+        const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
+        document.getElementById(
+          "status"
+        ).textContent = `⚔️ ${winner} победили!`;
+      } else {
+        currentPlayer = currentPlayer === "white" ? "black" : "white";
+        document.getElementById("status").textContent =
+          currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+        clearHighlights();
+        renderBoard();
+      }
     }
 
-    currentPlayer = currentPlayer === "white" ? "black" : "white";
-    document.getElementById("status").textContent =
-      currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
-    clearHighlights();
-    renderBoard();
-  }
+    clearInterval(timerInterval);
+    aiStatusElement.style.display = "none";
+    aiThinking = false;
+  }, 50); // небольшая задержка для отрисовки таймера
 }
 
 // === ОСНОВНОЙ ОБРАБОТЧИК ===
@@ -900,7 +1086,7 @@ function handleSquareClick(row, col, button) {
   }
 }
 
-// === ИНИЦИАЛИЗАЦИЯ ===
+// === UI ===
 document.getElementById("pgn-button").addEventListener("click", () => {
   const win = document.getElementById("pgn-window");
   const isHidden = window.getComputedStyle(win).display === "none";
@@ -937,4 +1123,9 @@ document.addEventListener("mouseup", () => {
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
+window.addEventListener("beforeunload", () => {
+  if (aiWorker) aiWorker.terminate();
+});
+
+// === ЗАПУСК ===
 resetGame();
