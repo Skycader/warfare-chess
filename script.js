@@ -637,20 +637,36 @@ function getAllMoves(board, side) {
 }
 
 function makeMoveCopy(board, move) {
+  // Глубокая копия доски
   const newBoard = JSON.parse(JSON.stringify(board));
+
+  // Глубокая копия флагов рокировки (если нужно — но для оценки не критично)
+  // Здесь мы фокусируемся только на доске
+
   const [fromR, fromC] = move.from;
   const [toR, toC] = move.to;
+  const piece = newBoard[fromR][fromC];
+
+  if (!piece) {
+    // Безопасность: если фигуры нет — возвращаем доску как есть
+    return newBoard;
+  }
+
   if (move.type === "move") {
-    const piece = newBoard[fromR][fromC];
+    // Обычный ход или рокировка
     if (piece === "K" && fromR === 7 && fromC === 4) {
+      // Белая рокировка
       if (toC === 6) {
+        // Короткая
         newBoard[7][5] = "R";
         newBoard[7][7] = null;
       } else if (toC === 2) {
+        // Длинная
         newBoard[7][3] = "R";
         newBoard[7][0] = null;
       }
     } else if (piece === "k" && fromR === 0 && fromC === 4) {
+      // Чёрная рокировка
       if (toC === 6) {
         newBoard[0][5] = "r";
         newBoard[0][7] = null;
@@ -659,11 +675,15 @@ function makeMoveCopy(board, move) {
         newBoard[0][0] = null;
       }
     }
+    // Выполняем ход
     newBoard[toR][toC] = piece;
     newBoard[fromR][fromC] = null;
   } else if (move.type === "shoot") {
+    // Выстрел: убиваем цель, стреляющая фигура остаётся
     newBoard[toR][toC] = null;
+    // from-фигура НЕ двигается — остаётся на месте (уже есть в newBoard)
   }
+
   return newBoard;
 }
 
