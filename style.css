@@ -290,3 +290,16 @@ h1 {
   line-height: 1;
   width: 60px;
 }
+.menu-group {
+  margin: 20px 0;
+  text-align: center;
+  color: #ccc;
+}
+.menu-group label {
+  display: inline-block;
+  margin: 0 10px;
+  cursor: pointer;
+}
+.menu-group input[type="radio"] {
+  margin-right: 5px;
+}

@@ -10,12 +10,27 @@
     <!-- Главное меню -->
     <div id="main-menu">
       <div class="menu-title">Chess: Modern Warfare</div>
+
+      <!-- Выбор режима -->
       <button id="human-btn" class="menu-btn" onclick="startGame('human')">
         Играть с человеком
       </button>
       <button id="ai-btn" class="menu-btn" onclick="showDifficulty()">
         Играть с ИИ
       </button>
+
+      <!-- Слайдер перезарядки -->
+      <div class="menu-group">
+        <div>Перезарядка выстрела:</div>
+        <div>
+          <label
+            ><input type="radio" name="reload" value="1" checked /> 1 ход</label
+          >
+          <label><input type="radio" name="reload" value="2" /> 2 хода</label>
+          <label><input type="radio" name="reload" value="3" /> 3 хода</label>
+        </div>
+      </div>
+
       <div id="difficulty-group" class="difficulty-group">
         <button class="menu-btn" onclick="startGame('ai', 1)">Лёгкая</button>
         <button class="menu-btn" onclick="startGame('ai', 2)">Средняя</button>
