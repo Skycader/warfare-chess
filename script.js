@@ -1,14 +1,14 @@
 // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
 let board, currentPlayer, selectedPiece, mode, possibleMoves, shootTargets;
-let moveHistory, moveNumber, castling, gameMode, aiLevel, aiColor;
-let killerMoves = {};
-let historyTable = {};
+let moveHistory,
+  moveNumber,
+  castling,
+  gameMode,
+  aiLevel,
+  aiColor = "black";
+let reloadTurns = 1;
+let reloadTimers = {};
 let aiThinking = false;
-let aiStatusElement = null;
-
-// === СИСТЕМА ПЕРЕЗАРЯДКИ ===
-let reloadTurns = 1; // по умолчанию: 1 ход
-let reloadTimers = {}; // { "7,4": 2 } — осталось 2 хода до перезарядки
 
 const pieceSymbols = {
   K: "♚",
@@ -49,10 +49,8 @@ function showMainMenu() {
 }
 
 function startGame(mode, level = null) {
-  // Считываем настройку перезарядки
   const reloadInput = document.querySelector('input[name="reload"]:checked');
   reloadTurns = reloadInput ? parseInt(reloadInput.value) : 1;
-
   gameMode = mode;
   aiLevel = level;
   aiColor = "black";
@@ -69,7 +67,7 @@ function resetGame() {
   shootTargets = [];
   moveHistory = [];
   moveNumber = 1;
-  reloadTimers = {}; // Сброс таймеров перезарядки
+  reloadTimers = {};
   castling = {
     whiteKingside: true,
     whiteQueenside: true,
@@ -285,13 +283,9 @@ function getValidMoves(row, col, piece) {
   return moves;
 }
 
-// === ВАЖНО: ПЕРЕЗАРЯДКА ВЛИЯЕТ НА ВЫСТРЕЛЫ ===
 function getShootTargets(row, col, piece) {
   const key = `${row},${col}`;
-  // Если идёт перезарядка — нельзя стрелять
-  if (reloadTimers[key] > 0) {
-    return [];
-  }
+  if (reloadTimers[key] > 0) return [];
 
   const targets = [];
   const white = isWhite(piece);
@@ -559,7 +553,7 @@ function clearHighlights() {
   shootTargets = [];
 }
 
-// === ОСНОВНОЙ РЕНДЕР С ПЕРЕЗАРЯДКОЙ ===
+// === РЕНДЕР С ПЕРЕЗАРЯДКОЙ ===
 function renderBoard() {
   const boardEl = document.getElementById("chessboard");
   boardEl.innerHTML = "";
@@ -574,13 +568,11 @@ function renderBoard() {
         square.textContent = pieceSymbols[piece];
         square.className += isWhite(piece) ? " piece-white" : " piece-black";
 
-        // ПОЛОСКА ПЕРЕЗАРЯДКИ
         const key = `${row},${col}`;
         if (reloadTimers[key] > 0) {
           const reloadBar = document.createElement("div");
           reloadBar.className = "reload-bar";
           reloadBar.textContent = reloadTimers[key];
-          reloadBar.title = `Перезарядка: ${reloadTimers[key]} ход(ов)`;
           square.appendChild(reloadBar);
         }
       }
@@ -596,21 +588,20 @@ function renderBoard() {
     const [r, c] = selectedPiece;
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("highlight");
+      ?.classList.add("highlight");
   }
   for (const [r, c] of possibleMoves) {
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("move-possible");
+      ?.classList.add("move-possible");
   }
   for (const [r, c] of shootTargets) {
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
-      .classList.add("target");
+      ?.classList.add("target");
   }
 }
 
-// === НОВАЯ ФУНКЦИЯ: УМЕНЬШЕНИЕ ТАЙМЕРОВ ===
 function decrementReloadTimers() {
   for (const key in reloadTimers) {
     if (reloadTimers[key] > 0) {
@@ -629,19 +620,117 @@ function checkKingAlive() {
   return false;
 }
 
-// === ИИ (без изменений, но учитывает перезарядку через getShootTargets) ===
-// ... (оставляем как есть, потому что getShootTargets уже блокирует стрельбу) ...
+// === ИИ ===
+function aiMove() {
+  if (gameMode !== "ai" || currentPlayer !== aiColor || aiThinking) return;
+
+  aiThinking = true;
+  document.getElementById("status").textContent = "Ход чёрных (ИИ)...";
+
+  let bestAction = null;
+  const actions = [];
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (piece && isBlack(piece)) {
+        const moves = getValidMoves(r, c, piece);
+        for (const to of moves) {
+          actions.push({ from: [r, c], to, type: "move" });
+        }
+        const shoots = getShootTargets(r, c, piece);
+        for (const to of shoots) {
+          if (board[to[0]][to[1]] === "K") {
+            bestAction = { from: [r, c], to, type: "shoot" };
+            break;
+          }
+          actions.push({ from: [r, c], to, type: "shoot" });
+        }
+        if (bestAction) break;
+      }
+    }
+    if (bestAction) break;
+  }
+
+  if (!bestAction && actions.length > 0) {
+    bestAction = actions[Math.floor(Math.random() * actions.length)];
+  }
+
+  setTimeout(() => {
+    if (bestAction) {
+      if (bestAction.type === "move") {
+        makeMove(
+          bestAction.from[0],
+          bestAction.from[1],
+          bestAction.to[0],
+          bestAction.to[1]
+        );
+        if (board[bestAction.to[0]][bestAction.to[1]] !== null) {
+          showBlood(bestAction.to[0], bestAction.to[1]);
+        }
+      } else if (bestAction.type === "shoot") {
+        logShot(
+          bestAction.from[0],
+          bestAction.from[1],
+          bestAction.to[0],
+          bestAction.to[1]
+        );
+        playShootSound();
+        shootLaser(
+          bestAction.from[0],
+          bestAction.from[1],
+          bestAction.to[0],
+          bestAction.to[1]
+        );
+        setTimeout(() => {
+          board[bestAction.to[0]][bestAction.to[1]] = null;
+          showBlood(bestAction.to[0], bestAction.to[1]);
+          const key = `${bestAction.from[0]},${bestAction.from[1]}`;
+          reloadTimers[key] = reloadTurns;
+        }, 300);
+      }
+
+      if (!checkKingAlive()) {
+        document.getElementById("status").textContent = `⚔️ Чёрные победили!`;
+        setTimeout(() => alert(`Чёрные победили!`), 100);
+      } else {
+        currentPlayer = "white";
+        document.getElementById("status").textContent = "Ход белых";
+        decrementReloadTimers();
+        renderBoard();
+      }
+    } else {
+      document.getElementById("status").textContent = `⚔️ Ничья (пат)`;
+    }
+    aiThinking = false;
+  }, 600);
+}
 
 // === ОСНОВНОЙ ОБРАБОТЧИК ===
 function handleSquareClick(row, col, button) {
-  if (gameMode === "ai" && currentPlayer === aiColor) return;
+  // Блокировка, если сейчас должен ходить ИИ
+  if (gameMode === "ai" && currentPlayer === aiColor) {
+    return;
+  }
 
   const piece = board[row][col];
   const isOwnPiece =
     (currentPlayer === "white" && isWhite(piece)) ||
     (currentPlayer === "black" && isBlack(piece));
 
+  // === ПКМ: Режим стрельбы ===
   if (button === 2) {
+    // Если клик по своей фигуре — выбираем её для стрельбы
+    if (isOwnPiece) {
+      clearHighlights();
+      selectedPiece = [row, col];
+      shootTargets = getShootTargets(row, col, piece);
+      mode = "shoot";
+      renderBoard();
+      return;
+    }
+
+    // Если уже выбрана фигура для стрельбы — пытаемся выстрелить
     if (mode === "shoot" && selectedPiece) {
       const isValidTarget = shootTargets.some(
         (t) => t[0] === row && t[1] === col
@@ -655,10 +744,11 @@ function handleSquareClick(row, col, button) {
           board[row][col] = null;
           showBlood(row, col);
 
-          // УСТАНАВЛИВАЕМ ПЕРЕЗАРЯДКУ
+          // Устанавливаем перезарядку
           const key = `${fromR},${fromC}`;
           reloadTimers[key] = reloadTurns;
 
+          // Проверка победы
           if (!checkKingAlive()) {
             const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
             document.getElementById(
@@ -670,43 +760,32 @@ function handleSquareClick(row, col, button) {
             return;
           }
 
-          currentPlayer = currentPlayer === "white" ? "black" : "white";
+          // Передача хода
+          currentPlayer = "black";
           document.getElementById("status").textContent =
-            currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
-
-          // Уменьшаем таймеры ПОСЛЕ хода
+            gameMode === "ai" ? "Ход чёрных (ИИ)..." : "Ход чёрных";
           decrementReloadTimers();
-
-          clearHighlights();
+          clearHighlights(); // ← КРИТИЧЕСКИ ВАЖНО: сброс выделения!
           renderBoard();
 
+          // Ход ИИ
           if (gameMode === "ai" && currentPlayer === aiColor) {
-            setTimeout(aiMove, 400);
+            setTimeout(aiMove, 500);
           }
         }, 300);
-        return;
-      } else {
-        clearHighlights();
-        renderBoard();
         return;
       }
     }
 
-    if (isOwnPiece) {
-      clearHighlights();
-      selectedPiece = [row, col];
-      shootTargets = getShootTargets(row, col, piece);
-      mode = "shoot";
-      renderBoard();
-      return;
-    }
-
+    // Любой другой клик ПКМ — сброс
     clearHighlights();
     renderBoard();
     return;
   }
 
+  // === ЛКМ: Режим хода ===
   if (button === 0) {
+    // Если уже выбрана фигура — пытаемся сходить
     if (mode === "move" && selectedPiece) {
       const isValidMove = possibleMoves.some(
         (m) => m[0] === row && m[1] === col
@@ -728,27 +807,27 @@ function handleSquareClick(row, col, button) {
           return;
         }
 
-        currentPlayer = currentPlayer === "white" ? "black" : "white";
+        // Передача хода
+        currentPlayer = "black";
         document.getElementById("status").textContent =
-          currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
-
-        // Уменьшаем таймеры ПОСЛЕ хода
+          gameMode === "ai" ? "Ход чёрных (ИИ)..." : "Ход чёрных";
         decrementReloadTimers();
-
-        clearHighlights();
+        clearHighlights(); // ← сброс после хода
         renderBoard();
 
         if (gameMode === "ai" && currentPlayer === aiColor) {
-          setTimeout(aiMove, 400);
+          setTimeout(aiMove, 500);
         }
         return;
       } else {
+        // Клик мимо возможного хода — сброс
         clearHighlights();
         renderBoard();
         return;
       }
     }
 
+    // Если клик по своей фигуре — выбираем для хода
     if (isOwnPiece) {
       clearHighlights();
       selectedPiece = [row, col];
@@ -758,14 +837,12 @@ function handleSquareClick(row, col, button) {
       return;
     }
 
+    // Клик по чужой фигуре или пустой клетке — сброс
     clearHighlights();
     renderBoard();
     return;
   }
 }
-
-// === ИИ ===
-// ... (вставь сюда ИИ из предыдущего рабочего скрипта, он будет учитывать reloadTimers автоматически) ...
 
 // === UI ===
 document.getElementById("pgn-button").addEventListener("click", () => {
