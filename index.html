@@ -134,6 +134,72 @@
         color: #ddd;
         margin: 10px 0;
       }
+
+      /* Кнопка PGN */
+      #pgn-button {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #333;
+        color: #ffcc00;
+        border: none;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        font-size: 20px;
+        cursor: pointer;
+        box-shadow: 0 0 8px rgba(255, 204, 0, 0.5);
+        z-index: 1000;
+      }
+      #pgn-button:hover {
+        background: #444;
+        transform: scale(1.1);
+      }
+
+      /* Окно PGN */
+      #pgn-window {
+        display: none;
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        width: 300px;
+        height: 200px;
+        background: #1a1a1a;
+        border: 2px solid #555;
+        border-radius: 8px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.7);
+        z-index: 2000;
+        resize: both;
+        overflow: hidden;
+        flex-direction: column;
+      }
+      #pgn-header {
+        padding: 8px 12px;
+        background: #2a2a2a;
+        cursor: move;
+        user-select: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+        color: #ffcc00;
+      }
+      #pgn-close {
+        background: none;
+        border: none;
+        color: #ff5555;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      #pgn-content {
+        flex: 1;
+        padding: 10px;
+        color: #ccc;
+        font-family: monospace;
+        font-size: 13px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
     </style>
   </head>
   <body>
@@ -146,85 +212,20 @@
     </div>
     <div class="info">Уничтожьте короля противника.</div>
 
+    <!-- Кнопка PGN -->
+    <button id="pgn-button">📚</button>
+
+    <!-- Окно PGN -->
+    <div id="pgn-window">
+      <div id="pgn-header">
+        <span>PGN Notation</span>
+        <button id="pgn-close">×</button>
+      </div>
+      <div id="pgn-content"></div>
+    </div>
+
     <script>
-      function playShootSound() {
-        try {
-          const audioCtx = new (window.AudioContext ||
-            window.webkitAudioContext)();
-          const oscillator = audioCtx.createOscillator();
-          const gainNode = audioCtx.createGain();
-          oscillator.connect(gainNode);
-          gainNode.connect(audioCtx.destination);
-          oscillator.type = "square";
-          oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
-          oscillator.frequency.exponentialRampToValueAtTime(
-            800,
-            audioCtx.currentTime + 0.1
-          );
-          oscillator.frequency.exponentialRampToValueAtTime(
-            200,
-            audioCtx.currentTime + 0.2
-          );
-          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-          gainNode.gain.exponentialRampToValueAtTime(
-            0.01,
-            audioCtx.currentTime + 0.3
-          );
-          oscillator.start(audioCtx.currentTime);
-          oscillator.stop(audioCtx.currentTime + 0.3);
-        } catch (e) {
-          console.warn("Звук не поддерживается:", e);
-        }
-      }
-
-      function showBlood(row, col) {
-        const square = document.querySelector(
-          `.square[data-row="${row}"][data-col="${col}"]`
-        );
-        if (!square) return;
-        const blood = document.createElement("div");
-        blood.className = "blood";
-        blood.textContent = "●";
-        blood.style.left = "50%";
-        blood.style.top = "50%";
-        blood.style.transform = "translate(-50%, -50%)";
-        square.appendChild(blood);
-        setTimeout(() => {
-          if (blood.parentNode) blood.parentNode.removeChild(blood);
-        }, 1000);
-      }
-
-      function shootLaser(fromRow, fromCol, toRow, toCol) {
-        const boardEl = document.getElementById("chessboard");
-        const from = document.querySelector(
-          `.square[data-row="${fromRow}"][data-col="${fromCol}"]`
-        );
-        const to = document.querySelector(
-          `.square[data-row="${toRow}"][data-col="${toCol}"]`
-        );
-        if (!from || !to) return;
-        const fromRect = from.getBoundingClientRect();
-        const toRect = to.getBoundingClientRect();
-        const boardRect = boardEl.getBoundingClientRect();
-        const x1 = fromRect.left + fromRect.width / 2 - boardRect.left;
-        const y1 = fromRect.top + fromRect.height / 2 - boardRect.top;
-        const x2 = toRect.left + toRect.width / 2 - boardRect.left;
-        const y2 = toRect.top + toRect.height / 2 - boardRect.top;
-        const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-        const laser = document.createElement("div");
-        laser.className = "laser";
-        laser.style.left = x1 + "px";
-        laser.style.top = y1 + "px";
-        laser.style.width = "0px";
-        laser.style.transform = `rotate(${angle}deg)`;
-        laser.style.setProperty("--laser-length", length + "px");
-        boardEl.appendChild(laser);
-        setTimeout(() => {
-          if (laser.parentNode) laser.parentNode.removeChild(laser);
-        }, 300);
-      }
-
+      // === Глобальные переменные ===
       const initialBoard = [
         ["r", "n", "b", "q", "k", "b", "n", "r"],
         ["p", "p", "p", "p", "p", "p", "p", "p"],
@@ -243,7 +244,16 @@
       let possibleMoves = [];
       let shootTargets = [];
 
-      // ✅ ЕДИНСТВЕННОЕ определение фигур — все сплошные символы
+      let moveHistory = [];
+      let moveNumber = 1;
+
+      let castling = {
+        whiteKingside: true,
+        whiteQueenside: true,
+        blackKingside: true,
+        blackQueenside: true,
+      };
+
       const pieceSymbols = {
         K: "♚",
         Q: "♛",
@@ -270,6 +280,65 @@
       }
       function isFriend(piece, forWhite) {
         return piece && !isEnemy(piece, forWhite);
+      }
+
+      function canCastle(white, kingside) {
+        if (white) {
+          if (kingside) {
+            if (!castling.whiteKingside) return false;
+            if (board[7][4] !== "K" || board[7][7] !== "R") return false;
+            if (board[7][5] !== null || board[7][6] !== null) return false;
+            return true;
+          } else {
+            if (!castling.whiteQueenside) return false;
+            if (board[7][4] !== "K" || board[7][0] !== "R") return false;
+            if (
+              board[7][1] !== null ||
+              board[7][2] !== null ||
+              board[7][3] !== null
+            )
+              return false;
+            return true;
+          }
+        } else {
+          if (kingside) {
+            if (!castling.blackKingside) return false;
+            if (board[0][4] !== "k" || board[0][7] !== "r") return false;
+            if (board[0][5] !== null || board[0][6] !== null) return false;
+            return true;
+          } else {
+            if (!castling.blackQueenside) return false;
+            if (board[0][4] !== "k" || board[0][0] !== "r") return false;
+            if (
+              board[0][1] !== null ||
+              board[0][2] !== null ||
+              board[0][3] !== null
+            )
+              return false;
+            return true;
+          }
+        }
+      }
+
+      function addToPGN(notation) {
+        if (currentPlayer === "white") {
+          moveHistory.push(`${moveNumber}. ${notation}`);
+          moveNumber++;
+        } else {
+          const last = moveHistory[moveHistory.length - 1];
+          if (last) {
+            moveHistory[moveHistory.length - 1] = last + ` ${notation}`;
+          } else {
+            moveHistory.push(`... ${notation}`);
+          }
+        }
+        updatePGNDisplay();
+      }
+
+      function updatePGNDisplay() {
+        const content = document.getElementById("pgn-content");
+        content.textContent = moveHistory.join("\n");
+        content.scrollTop = content.scrollHeight;
       }
 
       function getValidMoves(row, col, piece) {
@@ -368,6 +437,13 @@
                   moves.push([r2, c2]);
                 }
               }
+            if (white) {
+              if (canCastle(true, true)) moves.push([7, 6]);
+              if (canCastle(true, false)) moves.push([7, 2]);
+            } else {
+              if (canCastle(false, true)) moves.push([0, 6]);
+              if (canCastle(false, false)) moves.push([0, 2]);
+            }
             break;
           case "n":
             const offsets = [
@@ -512,6 +588,147 @@
         return targets;
       }
 
+      function updateCastling(fromRow, fromCol, toRow, toCol, piece) {
+        if (piece === "K") {
+          castling.whiteKingside = false;
+          castling.whiteQueenside = false;
+        }
+        if (piece === "k") {
+          castling.blackKingside = false;
+          castling.blackQueenside = false;
+        }
+        if (piece === "R") {
+          if (fromCol === 0) castling.whiteQueenside = false;
+          if (fromCol === 7) castling.whiteKingside = false;
+        }
+        if (piece === "r") {
+          if (fromCol === 0) castling.blackQueenside = false;
+          if (fromCol === 7) castling.blackKingside = false;
+        }
+      }
+
+      function makeMove(fromRow, fromCol, toRow, toCol) {
+        const piece = board[fromRow][fromCol];
+        const captured = board[toRow][toCol] !== null;
+        let notation = "";
+
+        const cols = "abcdefgh";
+        const toColChar = cols[toCol];
+        const toRank = 8 - toRow;
+
+        if (piece === "K" && fromRow === 7 && fromCol === 4) {
+          if (toCol === 6) {
+            board[7][5] = "R";
+            board[7][7] = null;
+            notation = "O-O";
+          } else if (toCol === 2) {
+            board[7][3] = "R";
+            board[7][0] = null;
+            notation = "O-O-O";
+          }
+        } else if (piece === "k" && fromRow === 0 && fromCol === 4) {
+          if (toCol === 6) {
+            board[0][5] = "r";
+            board[0][7] = null;
+            notation = "O-O";
+          } else if (toCol === 2) {
+            board[0][3] = "r";
+            board[0][0] = null;
+            notation = "O-O-O";
+          }
+        }
+
+        if (!notation) {
+          const pieceChar =
+            piece.toLowerCase() === "p" ? "" : piece.toUpperCase();
+          const capture = captured ? "x" : "";
+          notation = `${pieceChar}${capture}${toColChar}${toRank}`;
+        }
+
+        board[toRow][toCol] = piece;
+        board[fromRow][fromCol] = null;
+        updateCastling(fromRow, fromCol, toRow, toCol, piece);
+        addToPGN(notation);
+      }
+
+      function playShootSound() {
+        try {
+          const audioCtx = new (window.AudioContext ||
+            window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          oscillator.type = "square";
+          oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+          oscillator.frequency.exponentialRampToValueAtTime(
+            800,
+            audioCtx.currentTime + 0.1
+          );
+          oscillator.frequency.exponentialRampToValueAtTime(
+            200,
+            audioCtx.currentTime + 0.2
+          );
+          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(
+            0.01,
+            audioCtx.currentTime + 0.3
+          );
+          oscillator.start(audioCtx.currentTime);
+          oscillator.stop(audioCtx.currentTime + 0.3);
+        } catch (e) {
+          console.warn("Звук не поддерживается:", e);
+        }
+      }
+
+      function showBlood(row, col) {
+        const square = document.querySelector(
+          `.square[data-row="${row}"][data-col="${col}"]`
+        );
+        if (!square) return;
+        const blood = document.createElement("div");
+        blood.className = "blood";
+        blood.textContent = "●";
+        blood.style.left = "50%";
+        blood.style.top = "50%";
+        blood.style.transform = "translate(-50%, -50%)";
+        square.appendChild(blood);
+        setTimeout(() => {
+          if (blood.parentNode) blood.parentNode.removeChild(blood);
+        }, 1000);
+      }
+
+      function shootLaser(fromRow, fromCol, toRow, toCol) {
+        const boardEl = document.getElementById("chessboard");
+        const from = document.querySelector(
+          `.square[data-row="${fromRow}"][data-col="${fromCol}"]`
+        );
+        const to = document.querySelector(
+          `.square[data-row="${toRow}"][data-col="${toCol}"]`
+        );
+        if (!from || !to) return;
+        const fromRect = from.getBoundingClientRect();
+        const toRect = to.getBoundingClientRect();
+        const boardRect = boardEl.getBoundingClientRect();
+        const x1 = fromRect.left + fromRect.width / 2 - boardRect.left;
+        const y1 = fromRect.top + fromRect.height / 2 - boardRect.top;
+        const x2 = toRect.left + toRect.width / 2 - boardRect.left;
+        const y2 = toRect.top + toRect.height / 2 - boardRect.top;
+        const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+        const laser = document.createElement("div");
+        laser.className = "laser";
+        laser.style.left = x1 + "px";
+        laser.style.top = y1 + "px";
+        laser.style.width = "0px";
+        laser.style.transform = `rotate(${angle}deg)`;
+        laser.style.setProperty("--laser-length", length + "px");
+        boardEl.appendChild(laser);
+        setTimeout(() => {
+          if (laser.parentNode) laser.parentNode.removeChild(laser);
+        }, 300);
+      }
+
       function clearHighlights() {
         document
           .querySelectorAll(".highlight, .move-possible, .target")
@@ -570,14 +787,14 @@
 
       function checkKingAlive() {
         const enemyKing = currentPlayer === "white" ? "k" : "K";
-        for (let r = 0; r < 8; r++) {
+        for (let r = 0; r < 8; r++)
           for (let c = 0; c < 8; c++) {
             if (board[r][c] === enemyKing) return true;
           }
-        }
         return false;
       }
 
+      // === ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ===
       function handleSquareClick(row, col, button) {
         const piece = board[row][col];
         const isOwnPiece =
@@ -585,13 +802,7 @@
           (currentPlayer === "black" && isBlack(piece));
 
         if (button === 2) {
-          if (isOwnPiece && selectedPiece === null) {
-            clearHighlights();
-            selectedPiece = [row, col];
-            shootTargets = getShootTargets(row, col, piece);
-            mode = "shoot";
-            renderBoard();
-          } else if (mode === "shoot" && selectedPiece) {
+          if (mode === "shoot" && selectedPiece) {
             const isValidTarget = shootTargets.some(
               (t) => t[0] === row && t[1] === col
             );
@@ -612,6 +823,8 @@
                     () => alert(`${winner} победили!\nКороль убит.`),
                     100
                   );
+                  clearHighlights();
+                  renderBoard();
                   return;
                 }
 
@@ -621,55 +834,117 @@
                 clearHighlights();
                 renderBoard();
               }, 300);
+              return;
             } else {
               clearHighlights();
-            }
-          } else {
-            clearHighlights();
-          }
-          return;
-        }
-
-        if (button !== 0) return;
-
-        if (selectedPiece && mode === "move") {
-          const isValidMove = possibleMoves.some(
-            (m) => m[0] === row && m[1] === col
-          );
-          if (isValidMove) {
-            const [fromR, fromC] = selectedPiece;
-            const captured = board[row][col] !== null;
-            board[row][col] = board[fromR][fromC];
-            board[fromR][fromC] = null;
-
-            if (captured) showBlood(row, col);
-
-            if (!checkKingAlive()) {
-              const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
-              document.getElementById(
-                "status"
-              ).textContent = `⚔️ ${winner} победили!`;
-              setTimeout(() => alert(`${winner} победили!`), 100);
+              renderBoard();
               return;
             }
+          }
 
-            currentPlayer = currentPlayer === "white" ? "black" : "white";
-            document.getElementById("status").textContent =
-              currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+          if (isOwnPiece) {
             clearHighlights();
+            selectedPiece = [row, col];
+            shootTargets = getShootTargets(row, col, piece);
+            mode = "shoot";
             renderBoard();
             return;
           }
+
+          clearHighlights();
+          renderBoard();
+          return;
         }
 
-        clearHighlights();
-        if (isOwnPiece) {
-          selectedPiece = [row, col];
-          possibleMoves = getValidMoves(row, col, piece);
-          mode = "move";
+        if (button === 0) {
+          if (mode === "move" && selectedPiece) {
+            const isValidMove = possibleMoves.some(
+              (m) => m[0] === row && m[1] === col
+            );
+            if (isValidMove) {
+              const [fromR, fromC] = selectedPiece;
+              const captured = board[row][col] !== null;
+
+              makeMove(fromR, fromC, row, col);
+
+              if (captured) showBlood(row, col);
+
+              if (!checkKingAlive()) {
+                const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
+                document.getElementById(
+                  "status"
+                ).textContent = `⚔️ ${winner} победили!`;
+                setTimeout(() => alert(`${winner} победили!`), 100);
+                clearHighlights();
+                renderBoard();
+                return;
+              }
+
+              currentPlayer = currentPlayer === "white" ? "black" : "white";
+              document.getElementById("status").textContent =
+                currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+              clearHighlights();
+              renderBoard();
+              return;
+            } else {
+              clearHighlights();
+              renderBoard();
+              return;
+            }
+          }
+
+          if (isOwnPiece) {
+            clearHighlights();
+            selectedPiece = [row, col];
+            possibleMoves = getValidMoves(row, col, piece);
+            mode = "move";
+            renderBoard();
+            return;
+          }
+
+          clearHighlights();
           renderBoard();
+          return;
         }
       }
+
+      // === PGN Window ===
+      document.getElementById("pgn-button").addEventListener("click", () => {
+        const win = document.getElementById("pgn-window");
+        win.style.display = win.style.display === "none" ? "flex" : "none";
+        if (win.style.display === "flex") updatePGNDisplay();
+      });
+
+      document.getElementById("pgn-close").addEventListener("click", () => {
+        document.getElementById("pgn-window").style.display = "none";
+      });
+
+      // Drag PGN window
+      let isDragging = false;
+      let dragOffsetX, dragOffsetY;
+      const header = document.getElementById("pgn-header");
+      const win = document.getElementById("pgn-window");
+
+      header.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        const rect = win.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (isDragging) {
+          win.style.left = e.clientX - dragOffsetX + "px";
+          win.style.top = e.clientY - dragOffsetY + "px";
+          win.style.right = "auto";
+          win.style.bottom = "auto";
+        }
+      });
+
+      document.addEventListener("mouseup", () => {
+        isDragging = false;
+      });
 
       document.addEventListener("contextmenu", (e) => e.preventDefault());
       renderBoard();
