@@ -931,8 +931,11 @@
 
       document.getElementById("pgn-button").addEventListener("click", () => {
         const win = document.getElementById("pgn-window");
-        win.style.display = win.style.display === "none" ? "flex" : "none";
-        if (win.style.display === "flex") updatePGNDisplay();
+        const isHidden = window.getComputedStyle(win).display === "none";
+        win.style.display = isHidden ? "flex" : "none";
+        if (isHidden) {
+          updatePGNDisplay();
+        }
       });
 
       document.getElementById("pgn-close").addEventListener("click", () => {
