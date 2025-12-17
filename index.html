@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Шахматы-Снайперы: Кровь и Огонь!</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: #0a0a0a;
+        margin: 0;
+        padding: 20px;
+        color: #fff;
+      }
+      #status {
+        font-size: 22px;
+        margin: 15px 0;
+        font-weight: bold;
+        color: #ffcc00;
+        text-shadow: 0 0 8px rgba(255, 204, 0, 0.7);
+      }
+      #chessboard {
+        display: grid;
+        grid-template-columns: repeat(8, 60px);
+        grid-template-rows: repeat(8, 60px);
+        border: 3px solid #555;
+        box-shadow: 0 0 20px rgba(200, 0, 0, 0.6);
+        position: relative;
+      }
+      .square {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 40px;
+        cursor: pointer;
+        position: relative;
+        z-index: 2;
+      }
+      .white {
+        background-color: #f0d9b5;
+      }
+      .black {
+        background-color: #b58863;
+      }
+      .highlight {
+        box-shadow: inset 0 0 0 4px #00ccff;
+      }
+      .move-possible {
+        box-shadow: inset 0 0 0 4px #00ff66;
+      }
+      .target {
+        box-shadow: inset 0 0 0 4px #ff3333;
+      }
+
+      /* Эффекты */
+      .laser {
+        position: absolute;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          #ff0000,
+          #ff9900,
+          #ff0000,
+          transparent
+        );
+        height: 4px;
+        z-index: 10;
+        transform-origin: left center;
+        animation: laserShoot 0.3s forwards;
+      }
+      @keyframes laserShoot {
+        0% {
+          width: 0;
+          opacity: 1;
+        }
+        100% {
+          width: var(--laser-length);
+          opacity: 0;
+        }
+      }
+
+      .blood {
+        position: absolute;
+        font-size: 32px;
+        z-index: 20;
+        animation: bloodSplatter 1s forwards;
+        pointer-events: none;
+      }
+      @keyframes bloodSplatter {
+        0% {
+          transform: scale(0.2);
+          opacity: 1;
+        }
+        70% {
+          transform: scale(1.2);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 0;
+        }
+      }
+
+      .info {
+        margin-top: 15px;
+        color: #ccc;
+        max-width: 540px;
+        text-align: center;
+        line-height: 1.4;
+      }
+      .controls {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #aaa;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🩸🔫 Шахматы-Снайперы: Кровь и Огонь!</h1>
+    <div id="status">Ход белых</div>
+    <div id="chessboard"></div>
+    <div class="controls">
+      ЛКМ — выбрать фигуру → ЛКМ = <b>ход</b> | ПКМ по фигуре → ПКМ по цели =
+      <b>выстрел с эффектами!</b>
+    </div>
+    <div class="info">
+      Король убит? — будет <b>фонтан крови</b>! 🔥<br />
+      Звук выстрела включён (разрешите автовоспроизведение, если не слышно).
+    </div>
+
+    <script>
+      // === Генерация звука выстрела (Web Audio API) ===
+      function playShootSound() {
+        try {
+          const audioCtx = new (window.AudioContext ||
+            window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+
+          oscillator.type = "square";
+          oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+          oscillator.frequency.exponentialRampToValueAtTime(
+            800,
+            audioCtx.currentTime + 0.1
+          );
+          oscillator.frequency.exponentialRampToValueAtTime(
+            200,
+            audioCtx.currentTime + 0.2
+          );
+
+          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(
+            0.01,
+            audioCtx.currentTime + 0.3
+          );
+
+          oscillator.start(audioCtx.currentTime);
+          oscillator.stop(audioCtx.currentTime + 0.3);
+        } catch (e) {
+          console.warn("Звук не поддерживается:", e);
+        }
+      }
+
+      // === Кровавый эффект ===
+      function showBlood(row, col) {
+        const square = document.querySelector(
+          `.square[data-row="${row}"][data-col="${col}"]`
+        );
+        if (!square) return;
+
+        const blood = document.createElement("div");
+        blood.className = "blood";
+        blood.innerHTML = "🩸";
+        blood.style.left = "50%";
+        blood.style.top = "50%";
+        blood.style.transform = "translate(-50%, -50%)";
+        square.appendChild(blood);
+
+        setTimeout(() => {
+          if (blood.parentNode) blood.parentNode.removeChild(blood);
+        }, 1000);
+      }
+
+      // === Анимация лазера ===
+      function shootLaser(fromRow, fromCol, toRow, toCol) {
+        const boardEl = document.getElementById("chessboard");
+        const from = document.querySelector(
+          `.square[data-row="${fromRow}"][data-col="${fromCol}"]`
+        );
+        const to = document.querySelector(
+          `.square[data-row="${toRow}"][data-col="${toCol}"]`
+        );
+
+        if (!from || !to) return;
+
+        const fromRect = from.getBoundingClientRect();
+        const toRect = to.getBoundingClientRect();
+        const boardRect = boardEl.getBoundingClientRect();
+
+        const x1 = fromRect.left + fromRect.width / 2 - boardRect.left;
+        const y1 = fromRect.top + fromRect.height / 2 - boardRect.top;
+        const x2 = toRect.left + toRect.width / 2 - boardRect.left;
+        const y2 = toRect.top + toRect.height / 2 - boardRect.top;
+
+        const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+
+        const laser = document.createElement("div");
+        laser.className = "laser";
+        laser.style.left = x1 + "px";
+        laser.style.top = y1 + "px";
+        laser.style.width = "0px";
+        laser.style.transform = `rotate(${angle}deg)`;
+        laser.style.setProperty("--laser-length", length + "px");
+
+        boardEl.appendChild(laser);
+
+        setTimeout(() => {
+          if (laser.parentNode) laser.parentNode.removeChild(laser);
+        }, 300);
+      }
+
+      // === Основная логика игры ===
+      const initialBoard = [
+        ["r", "n", "b", "q", "k", "b", "n", "r"],
+        ["p", "p", "p", "p", "p", "p", "p", "p"],
+        [null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null],
+        [null, null, null, null, null, null, null, null],
+        ["P", "P", "P", "P", "P", "P", "P", "P"],
+        ["R", "N", "B", "Q", "K", "B", "N", "R"],
+      ];
+
+      let board = JSON.parse(JSON.stringify(initialBoard));
+      let currentPlayer = "white";
+      let selectedPiece = null;
+      let mode = null;
+      let possibleMoves = [];
+      let shootTargets = [];
+
+      const pieceEmoji = {
+        K: "♔",
+        Q: "♕",
+        R: "♖",
+        B: "♗",
+        N: "♘",
+        P: "♙",
+        k: "♚",
+        q: "♛",
+        r: "♜",
+        b: "♝",
+        n: "♞",
+        p: "♟",
+      };
+
+      function isWhite(piece) {
+        return piece && piece === piece.toUpperCase();
+      }
+      function isBlack(piece) {
+        return piece && piece === piece.toLowerCase();
+      }
+      function isEnemy(piece, forWhite) {
+        if (!piece) return false;
+        return forWhite ? isBlack(piece) : isWhite(piece);
+      }
+      function isFriend(piece, forWhite) {
+        return !isEnemy(piece, forWhite) && piece !== null;
+      }
+
+      // === ХОДЫ ===
+      function getValidMoves(row, col, piece) {
+        const moves = [];
+        const white = isWhite(piece);
+        const type = piece.toLowerCase();
+
+        function addDirection(dr, dc, limit = 7) {
+          let r = row + dr,
+            c = col + dc,
+            steps = 0;
+          while (r >= 0 && r < 8 && c >= 0 && c < 8 && steps < limit) {
+            if (board[r][c] === null) moves.push([r, c]);
+            else {
+              if (isEnemy(board[r][c], white)) moves.push([r, c]);
+              break;
+            }
+            r += dr;
+            c += dc;
+            steps++;
+          }
+        }
+
+        switch (type) {
+          case "p":
+            const dir = white ? -1 : 1;
+            if (
+              row + dir >= 0 &&
+              row + dir < 8 &&
+              board[row + dir][col] === null
+            ) {
+              moves.push([row + dir, col]);
+              if ((white && row === 6) || (!white && row === 1)) {
+                if (board[row + 2 * dir][col] === null)
+                  moves.push([row + 2 * dir, col]);
+              }
+            }
+            for (let dc of [-1, 1]) {
+              const r2 = row + dir,
+                c2 = col + dc;
+              if (
+                r2 >= 0 &&
+                r2 < 8 &&
+                c2 >= 0 &&
+                c2 < 8 &&
+                isEnemy(board[r2][c2], white)
+              ) {
+                moves.push([r2, c2]);
+              }
+            }
+            break;
+          case "r":
+            for (let d of [
+              [0, 1],
+              [1, 0],
+              [0, -1],
+              [-1, 0],
+            ])
+              addDirection(...d);
+            break;
+          case "b":
+            for (let d of [
+              [1, 1],
+              [1, -1],
+              [-1, 1],
+              [-1, -1],
+            ])
+              addDirection(...d);
+            break;
+          case "q":
+            for (let d of [
+              [0, 1],
+              [1, 0],
+              [0, -1],
+              [-1, 0],
+              [1, 1],
+              [1, -1],
+              [-1, 1],
+              [-1, -1],
+            ])
+              addDirection(...d);
+            break;
+          case "k":
+            for (let dr = -1; dr <= 1; dr++)
+              for (let dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const r2 = row + dr,
+                  c2 = col + dc;
+                if (
+                  r2 >= 0 &&
+                  r2 < 8 &&
+                  c2 >= 0 &&
+                  c2 < 8 &&
+                  !isFriend(board[r2][c2], white)
+                ) {
+                  moves.push([r2, c2]);
+                }
+              }
+            break;
+          case "n":
+            for (let [dr, dc] of [
+              [-2, -1],
+              [-2, 1],
+              [-1, -2],
+              [-1, 2],
+              [1, -2],
+              [1, 2],
+              [2, -1],
+              [2, 1],
+            ]) {
+              const r2 = row + dr,
+                c2 = col + dc;
+              if (
+                r2 >= 0 &&
+                r2 < 8 &&
+                c2 >= 0 &&
+                c2 < 8 &&
+                !isFriend(board[r2][c2], white)
+              ) {
+                moves.push([r2, c2]);
+              }
+            }
+            break;
+        }
+        return moves;
+      }
+
+      // === ВЫСТРЕЛЫ ===
+      function getShootTargets(row, col, piece) {
+        const targets = [];
+        const white = isWhite(piece);
+        const type = piece.toLowerCase();
+
+        function addShootDirection(dr, dc) {
+          let r = row + dr,
+            c = col + dc;
+          while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            if (board[r][c] !== null) {
+              if (isEnemy(board[r][c], white)) targets.push([r, c]);
+              break;
+            }
+            r += dr;
+            c += dc;
+          }
+        }
+
+        switch (type) {
+          case "p":
+            const dir = white ? -1 : 1;
+            for (let dc of [-1, 1]) {
+              const r2 = row + dir,
+                c2 = col + dc;
+              if (
+                r2 >= 0 &&
+                r2 < 8 &&
+                c2 >= 0 &&
+                c2 < 8 &&
+                isEnemy(board[r2][c2], white)
+              ) {
+                targets.push([r2, c2]);
+              }
+            }
+            break;
+          case "r":
+            for (let d of [
+              [0, 1],
+              [1, 0],
+              [0, -1],
+              [-1, 0],
+            ])
+              addShootDirection(...d);
+            break;
+          case "b":
+            for (let d of [
+              [1, 1],
+              [1, -1],
+              [-1, 1],
+              [-1, -1],
+            ])
+              addShootDirection(...d);
+            break;
+          case "q":
+            for (let d of [
+              [0, 1],
+              [1, 0],
+              [0, -1],
+              [-1, 0],
+              [1, 1],
+              [1, -1],
+              [-1, 1],
+              [-1, -1],
+            ])
+              addShootDirection(...d);
+            break;
+          case "k":
+            for (let dr = -1; dr <= 1; dr++)
+              for (let dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const r2 = row + dr,
+                  c2 = col + dc;
+                if (
+                  r2 >= 0 &&
+                  r2 < 8 &&
+                  c2 >= 0 &&
+                  c2 < 8 &&
+                  isEnemy(board[r2][c2], white)
+                ) {
+                  targets.push([r2, c2]);
+                }
+              }
+            break;
+          case "n":
+            for (let [dr, dc] of [
+              [-2, -1],
+              [-2, 1],
+              [-1, -2],
+              [-1, 2],
+              [1, -2],
+              [1, 2],
+              [2, -1],
+              [2, 1],
+            ]) {
+              const r2 = row + dr,
+                c2 = col + dc;
+              if (
+                r2 >= 0 &&
+                r2 < 8 &&
+                c2 >= 0 &&
+                c2 < 8 &&
+                isEnemy(board[r2][c2], white)
+              ) {
+                targets.push([r2, c2]);
+              }
+            }
+            break;
+        }
+        return targets;
+      }
+
+      function clearHighlights() {
+        document
+          .querySelectorAll(".highlight, .move-possible, .target")
+          .forEach((el) => {
+            el.classList.remove("highlight", "move-possible", "target");
+          });
+        selectedPiece = null;
+        mode = null;
+        possibleMoves = [];
+        shootTargets = [];
+      }
+
+      function renderBoard() {
+        const boardEl = document.getElementById("chessboard");
+        boardEl.innerHTML = "";
+        for (let row = 0; row < 8; row++) {
+          for (let col = 0; col < 8; col++) {
+            const square = document.createElement("div");
+            square.className = `square ${
+              (row + col) % 2 === 0 ? "white" : "black"
+            }`;
+            square.dataset.row = row;
+            square.dataset.col = col;
+            const piece = board[row][col];
+            if (piece) {
+              square.textContent = pieceEmoji[piece];
+            }
+            square.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              handleSquareClick(row, col, e.button);
+            });
+            boardEl.appendChild(square);
+          }
+        }
+
+        if (selectedPiece) {
+          const [r, c] = selectedPiece;
+          document
+            .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
+            .classList.add("highlight");
+        }
+        for (const [r, c] of possibleMoves) {
+          document
+            .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
+            .classList.add("move-possible");
+        }
+        for (const [r, c] of shootTargets) {
+          document
+            .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
+            .classList.add("target");
+        }
+      }
+
+      function checkKingAlive() {
+        const enemyKing = currentPlayer === "white" ? "k" : "K";
+        for (let r = 0; r < 8; r++)
+          for (let c = 0; c < 8; c++) {
+            if (board[r][c] === enemyKing) return true;
+          }
+        return false;
+      }
+
+      function handleSquareClick(row, col, button) {
+        const piece = board[row][col];
+        const isOwnPiece =
+          (currentPlayer === "white" && isWhite(piece)) ||
+          (currentPlayer === "black" && isBlack(piece));
+
+        if (button === 2) {
+          // ПКМ
+          if (isOwnPiece && selectedPiece === null) {
+            clearHighlights();
+            selectedPiece = [row, col];
+            shootTargets = getShootTargets(row, col, piece);
+            mode = "shoot";
+            renderBoard();
+          } else if (mode === "shoot" && selectedPiece) {
+            const isValidTarget = shootTargets.some(
+              (t) => t[0] === row && t[1] === col
+            );
+            if (isValidTarget) {
+              // ЭФФЕКТЫ!
+              playShootSound();
+              const [fromR, fromC] = selectedPiece;
+              shootLaser(fromR, fromC, row, col);
+              setTimeout(() => {
+                board[row][col] = null;
+                showBlood(row, col);
+
+                if (!checkKingAlive()) {
+                  const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
+                  document.getElementById(
+                    "status"
+                  ).textContent = `☠️ ${winner} победили! Король мёртв!`;
+                  setTimeout(
+                    () => alert(`${winner} победили!\nКороль убит в бою!`),
+                    100
+                  );
+                  return;
+                }
+
+                currentPlayer = currentPlayer === "white" ? "black" : "white";
+                document.getElementById("status").textContent =
+                  currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+                clearHighlights();
+                renderBoard();
+              }, 300); // синхронизация с анимацией
+            } else {
+              clearHighlights();
+            }
+          } else {
+            clearHighlights();
+          }
+          return;
+        }
+
+        if (button !== 0) return; // игнор ЛКМ
+
+        if (selectedPiece && mode === "move") {
+          const isValidMove = possibleMoves.some(
+            (m) => m[0] === row && m[1] === col
+          );
+          if (isValidMove) {
+            const [fromR, fromC] = selectedPiece;
+            const captured = board[row][col] !== null;
+            board[row][col] = board[fromR][fromC];
+            board[fromR][fromC] = null;
+
+            if (captured) showBlood(row, col);
+
+            if (!checkKingAlive()) {
+              const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
+              document.getElementById(
+                "status"
+              ).textContent = `⚔️ ${winner} победили!`;
+              setTimeout(() => alert(`${winner} победили!`), 100);
+              return;
+            }
+
+            currentPlayer = currentPlayer === "white" ? "black" : "white";
+            document.getElementById("status").textContent =
+              currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+            clearHighlights();
+            renderBoard();
+            return;
+          }
+        }
+
+        clearHighlights();
+        if (isOwnPiece) {
+          selectedPiece = [row, col];
+          possibleMoves = getValidMoves(row, col, piece);
+          mode = "move";
+          renderBoard();
+        }
+      }
+
+      document.addEventListener("contextmenu", (e) => e.preventDefault());
+      renderBoard();
+    </script>
+  </body>
+</html>
