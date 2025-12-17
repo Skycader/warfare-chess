@@ -135,7 +135,7 @@
         margin: 10px 0;
       }
 
-      /* Кнопка PGN */
+      /* PGN Button */
       #pgn-button {
         position: fixed;
         bottom: 20px;
@@ -156,7 +156,7 @@
         transform: scale(1.1);
       }
 
-      /* Окно PGN */
+      /* PGN Window */
       #pgn-window {
         display: none;
         position: fixed;
@@ -212,10 +212,7 @@
     </div>
     <div class="info">Уничтожьте короля противника.</div>
 
-    <!-- Кнопка PGN -->
     <button id="pgn-button">📚</button>
-
-    <!-- Окно PGN -->
     <div id="pgn-window">
       <div id="pgn-header">
         <span>PGN Notation</span>
@@ -225,7 +222,6 @@
     </div>
 
     <script>
-      // === Глобальные переменные ===
       const initialBoard = [
         ["r", "n", "b", "q", "k", "b", "n", "r"],
         ["p", "p", "p", "p", "p", "p", "p", "p"],
@@ -243,7 +239,6 @@
       let mode = null;
       let possibleMoves = [];
       let shootTargets = [];
-
       let moveHistory = [];
       let moveNumber = 1;
 
@@ -282,6 +277,47 @@
         return piece && !isEnemy(piece, forWhite);
       }
 
+      function pieceToName(piece) {
+        const map = {
+          K: "King",
+          Q: "Queen",
+          R: "Rook",
+          B: "Bishop",
+          N: "Knight",
+          P: "Pawn",
+        };
+        return map[piece.toUpperCase()] || "Piece";
+      }
+
+      function addToPGN(text) {
+        if (currentPlayer === "white") {
+          moveHistory.push(`${moveNumber}. ${text}`);
+          moveNumber++;
+        } else {
+          const last = moveHistory[moveHistory.length - 1];
+          if (last && last.includes(".")) {
+            moveHistory[moveHistory.length - 1] = last + ` ${text}`;
+          } else {
+            moveHistory.push(`... ${text}`);
+          }
+        }
+        updatePGNDisplay();
+      }
+
+      function logShot(fromRow, fromCol, toRow, toCol) {
+        const cols = "abcdefgh";
+        const fromSquare = cols[fromCol] + (8 - fromRow);
+        const toSquare = cols[toCol] + (8 - toRow);
+        const notation = `{ ${fromSquare}🏹${toSquare} }`;
+        addToPGN(notation);
+      }
+
+      function updatePGNDisplay() {
+        const content = document.getElementById("pgn-content");
+        content.textContent = moveHistory.join("\n");
+        content.scrollTop = content.scrollHeight;
+      }
+
       function canCastle(white, kingside) {
         if (white) {
           if (kingside) {
@@ -318,27 +354,6 @@
             return true;
           }
         }
-      }
-
-      function addToPGN(notation) {
-        if (currentPlayer === "white") {
-          moveHistory.push(`${moveNumber}. ${notation}`);
-          moveNumber++;
-        } else {
-          const last = moveHistory[moveHistory.length - 1];
-          if (last) {
-            moveHistory[moveHistory.length - 1] = last + ` ${notation}`;
-          } else {
-            moveHistory.push(`... ${notation}`);
-          }
-        }
-        updatePGNDisplay();
-      }
-
-      function updatePGNDisplay() {
-        const content = document.getElementById("pgn-content");
-        content.textContent = moveHistory.join("\n");
-        content.scrollTop = content.scrollHeight;
       }
 
       function getValidMoves(row, col, piece) {
@@ -607,6 +622,7 @@
         }
       }
 
+      // === КЛЮЧЕВАЯ ФУНКЦИЯ: ХОД С 🏹 ===
       function makeMove(fromRow, fromCol, toRow, toCol) {
         const piece = board[fromRow][fromCol];
         const captured = board[toRow][toCol] !== null;
@@ -616,6 +632,7 @@
         const toColChar = cols[toCol];
         const toRank = 8 - toRow;
 
+        // Рокировка
         if (piece === "K" && fromRow === 7 && fromCol === 4) {
           if (toCol === 6) {
             board[7][5] = "R";
@@ -641,8 +658,11 @@
         if (!notation) {
           const pieceChar =
             piece.toLowerCase() === "p" ? "" : piece.toUpperCase();
-          const capture = captured ? "x" : "";
-          notation = `${pieceChar}${capture}${toColChar}${toRank}`;
+          if (captured) {
+            notation = `${pieceChar}🏹${toColChar}${toRank}`;
+          } else {
+            notation = `${pieceChar}${toColChar}${toRank}`;
+          }
         }
 
         board[toRow][toCol] = piece;
@@ -651,6 +671,7 @@
         addToPGN(notation);
       }
 
+      // === Остальной код без изменений ===
       function playShootSound() {
         try {
           const audioCtx = new (window.AudioContext ||
@@ -794,7 +815,6 @@
         return false;
       }
 
-      // === ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ===
       function handleSquareClick(row, col, button) {
         const piece = board[row][col];
         const isOwnPiece =
@@ -811,6 +831,7 @@
               const [fromR, fromC] = selectedPiece;
               shootLaser(fromR, fromC, row, col);
               setTimeout(() => {
+                logShot(fromR, fromC, row, col);
                 board[row][col] = null;
                 showBlood(row, col);
 
@@ -865,7 +886,7 @@
               const [fromR, fromC] = selectedPiece;
               const captured = board[row][col] !== null;
 
-              makeMove(fromR, fromC, row, col);
+              makeMove(fromR, fromC, row, col); // ✅ Запись хода
 
               if (captured) showBlood(row, col);
 
@@ -908,7 +929,6 @@
         }
       }
 
-      // === PGN Window ===
       document.getElementById("pgn-button").addEventListener("click", () => {
         const win = document.getElementById("pgn-window");
         win.style.display = win.style.display === "none" ? "flex" : "none";
@@ -919,7 +939,6 @@
         document.getElementById("pgn-window").style.display = "none";
       });
 
-      // Drag PGN window
       let isDragging = false;
       let dragOffsetX, dragOffsetY;
       const header = document.getElementById("pgn-header");
