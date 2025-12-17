@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Шахматы-Снайперы: Кровь и Огонь!</title>
+    <title>Chess: Modern Warfare</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -40,6 +40,8 @@
         cursor: pointer;
         position: relative;
         z-index: 2;
+        font-family: "Segoe UI Symbol", "Noto Sans Symbols", "Arial Unicode MS",
+          sans-serif;
       }
       .white {
         background-color: #f0d9b5;
@@ -56,8 +58,14 @@
       .target {
         box-shadow: inset 0 0 0 4px #ff3333;
       }
-
-      /* Эффекты */
+      .piece-white {
+        color: white;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.6);
+      }
+      .piece-black {
+        color: black;
+        text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.4);
+      }
       .laser {
         position: absolute;
         background: linear-gradient(
@@ -83,13 +91,15 @@
           opacity: 0;
         }
       }
-
       .blood {
         position: absolute;
-        font-size: 32px;
+        font-size: 28px;
         z-index: 20;
         animation: bloodSplatter 1s forwards;
         pointer-events: none;
+        color: #ff0000;
+        font-weight: bold;
+        text-shadow: 0 0 6px #ff0000;
       }
       @keyframes bloodSplatter {
         0% {
@@ -105,7 +115,6 @@
           opacity: 0;
         }
       }
-
       .info {
         margin-top: 15px;
         color: #ccc;
@@ -118,33 +127,34 @@
         font-size: 14px;
         color: #aaa;
       }
+      h1 {
+        font-family: "Courier New", monospace;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #ddd;
+        margin: 10px 0;
+      }
     </style>
   </head>
   <body>
-    <h1>🩸🔫 Шахматы-Снайперы: Кровь и Огонь!</h1>
+    <h1>Chess: Modern Warfare</h1>
     <div id="status">Ход белых</div>
     <div id="chessboard"></div>
     <div class="controls">
       ЛКМ — выбрать фигуру → ЛКМ = <b>ход</b> | ПКМ по фигуре → ПКМ по цели =
-      <b>выстрел с эффектами!</b>
+      <b>выстрел</b>
     </div>
-    <div class="info">
-      Король убит? — будет <b>фонтан крови</b>! 🔥<br />
-      Звук выстрела включён (разрешите автовоспроизведение, если не слышно).
-    </div>
+    <div class="info">Уничтожьте короля противника.</div>
 
     <script>
-      // === Генерация звука выстрела (Web Audio API) ===
       function playShootSound() {
         try {
           const audioCtx = new (window.AudioContext ||
             window.webkitAudioContext)();
           const oscillator = audioCtx.createOscillator();
           const gainNode = audioCtx.createGain();
-
           oscillator.connect(gainNode);
           gainNode.connect(audioCtx.destination);
-
           oscillator.type = "square";
           oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
           oscillator.frequency.exponentialRampToValueAtTime(
@@ -155,13 +165,11 @@
             200,
             audioCtx.currentTime + 0.2
           );
-
           gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
           gainNode.gain.exponentialRampToValueAtTime(
             0.01,
             audioCtx.currentTime + 0.3
           );
-
           oscillator.start(audioCtx.currentTime);
           oscillator.stop(audioCtx.currentTime + 0.3);
         } catch (e) {
@@ -169,27 +177,23 @@
         }
       }
 
-      // === Кровавый эффект ===
       function showBlood(row, col) {
         const square = document.querySelector(
           `.square[data-row="${row}"][data-col="${col}"]`
         );
         if (!square) return;
-
         const blood = document.createElement("div");
         blood.className = "blood";
-        blood.innerHTML = "🩸";
+        blood.textContent = "●";
         blood.style.left = "50%";
         blood.style.top = "50%";
         blood.style.transform = "translate(-50%, -50%)";
         square.appendChild(blood);
-
         setTimeout(() => {
           if (blood.parentNode) blood.parentNode.removeChild(blood);
         }, 1000);
       }
 
-      // === Анимация лазера ===
       function shootLaser(fromRow, fromCol, toRow, toCol) {
         const boardEl = document.getElementById("chessboard");
         const from = document.querySelector(
@@ -198,21 +202,16 @@
         const to = document.querySelector(
           `.square[data-row="${toRow}"][data-col="${toCol}"]`
         );
-
         if (!from || !to) return;
-
         const fromRect = from.getBoundingClientRect();
         const toRect = to.getBoundingClientRect();
         const boardRect = boardEl.getBoundingClientRect();
-
         const x1 = fromRect.left + fromRect.width / 2 - boardRect.left;
         const y1 = fromRect.top + fromRect.height / 2 - boardRect.top;
         const x2 = toRect.left + toRect.width / 2 - boardRect.left;
         const y2 = toRect.top + toRect.height / 2 - boardRect.top;
-
         const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-
         const laser = document.createElement("div");
         laser.className = "laser";
         laser.style.left = x1 + "px";
@@ -220,15 +219,12 @@
         laser.style.width = "0px";
         laser.style.transform = `rotate(${angle}deg)`;
         laser.style.setProperty("--laser-length", length + "px");
-
         boardEl.appendChild(laser);
-
         setTimeout(() => {
           if (laser.parentNode) laser.parentNode.removeChild(laser);
         }, 300);
       }
 
-      // === Основная логика игры ===
       const initialBoard = [
         ["r", "n", "b", "q", "k", "b", "n", "r"],
         ["p", "p", "p", "p", "p", "p", "p", "p"],
@@ -247,13 +243,14 @@
       let possibleMoves = [];
       let shootTargets = [];
 
-      const pieceEmoji = {
-        K: "♔",
-        Q: "♕",
-        R: "♖",
-        B: "♗",
-        N: "♘",
-        P: "♙",
+      // ✅ ЕДИНСТВЕННОЕ определение фигур — все сплошные символы
+      const pieceSymbols = {
+        K: "♚",
+        Q: "♛",
+        R: "♜",
+        B: "♝",
+        N: "♞",
+        P: "♟",
         k: "♚",
         q: "♛",
         r: "♜",
@@ -269,14 +266,12 @@
         return piece && piece === piece.toLowerCase();
       }
       function isEnemy(piece, forWhite) {
-        if (!piece) return false;
-        return forWhite ? isBlack(piece) : isWhite(piece);
+        return piece && (forWhite ? isBlack(piece) : isWhite(piece));
       }
       function isFriend(piece, forWhite) {
-        return !isEnemy(piece, forWhite) && piece !== null;
+        return piece && !isEnemy(piece, forWhite);
       }
 
-      // === ХОДЫ ===
       function getValidMoves(row, col, piece) {
         const moves = [];
         const white = isWhite(piece);
@@ -375,7 +370,7 @@
               }
             break;
           case "n":
-            for (let [dr, dc] of [
+            const offsets = [
               [-2, -1],
               [-2, 1],
               [-1, -2],
@@ -384,7 +379,9 @@
               [1, 2],
               [2, -1],
               [2, 1],
-            ]) {
+            ];
+            for (let i = 0; i < offsets.length; i++) {
+              const [dr, dc] = offsets[i];
               const r2 = row + dr,
                 c2 = col + dc;
               if (
@@ -402,7 +399,6 @@
         return moves;
       }
 
-      // === ВЫСТРЕЛЫ ===
       function getShootTargets(row, col, piece) {
         const targets = [];
         const white = isWhite(piece);
@@ -487,7 +483,7 @@
               }
             break;
           case "n":
-            for (let [dr, dc] of [
+            const offsets = [
               [-2, -1],
               [-2, 1],
               [-1, -2],
@@ -496,7 +492,9 @@
               [1, 2],
               [2, -1],
               [2, 1],
-            ]) {
+            ];
+            for (let i = 0; i < offsets.length; i++) {
+              const [dr, dc] = offsets[i];
               const r2 = row + dr,
                 c2 = col + dc;
               if (
@@ -539,7 +537,10 @@
             square.dataset.col = col;
             const piece = board[row][col];
             if (piece) {
-              square.textContent = pieceEmoji[piece];
+              square.textContent = pieceSymbols[piece];
+              square.className += isWhite(piece)
+                ? " piece-white"
+                : " piece-black";
             }
             square.addEventListener("mousedown", (e) => {
               e.preventDefault();
@@ -569,10 +570,11 @@
 
       function checkKingAlive() {
         const enemyKing = currentPlayer === "white" ? "k" : "K";
-        for (let r = 0; r < 8; r++)
+        for (let r = 0; r < 8; r++) {
           for (let c = 0; c < 8; c++) {
             if (board[r][c] === enemyKing) return true;
           }
+        }
         return false;
       }
 
@@ -583,7 +585,6 @@
           (currentPlayer === "black" && isBlack(piece));
 
         if (button === 2) {
-          // ПКМ
           if (isOwnPiece && selectedPiece === null) {
             clearHighlights();
             selectedPiece = [row, col];
@@ -595,7 +596,6 @@
               (t) => t[0] === row && t[1] === col
             );
             if (isValidTarget) {
-              // ЭФФЕКТЫ!
               playShootSound();
               const [fromR, fromC] = selectedPiece;
               shootLaser(fromR, fromC, row, col);
@@ -607,9 +607,9 @@
                   const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
                   document.getElementById(
                     "status"
-                  ).textContent = `☠️ ${winner} победили! Король мёртв!`;
+                  ).textContent = `☠️ ${winner} победили! Король уничтожен.`;
                   setTimeout(
-                    () => alert(`${winner} победили!\nКороль убит в бою!`),
+                    () => alert(`${winner} победили!\nКороль убит.`),
                     100
                   );
                   return;
@@ -620,7 +620,7 @@
                   currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
                 clearHighlights();
                 renderBoard();
-              }, 300); // синхронизация с анимацией
+              }, 300);
             } else {
               clearHighlights();
             }
@@ -630,7 +630,7 @@
           return;
         }
 
-        if (button !== 0) return; // игнор ЛКМ
+        if (button !== 0) return;
 
         if (selectedPiece && mode === "move") {
           const isValidMove = possibleMoves.some(
