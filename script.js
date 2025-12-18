@@ -659,6 +659,7 @@ function aiMove() {
   setTimeout(() => {
     if (bestAction) {
       if (bestAction.type === "move") {
+        // Обычный ход — как у игрока
         makeMove(
           bestAction.from[0],
           bestAction.from[1],
@@ -669,31 +670,43 @@ function aiMove() {
           showBlood(bestAction.to[0], bestAction.to[1]);
         }
       } else if (bestAction.type === "shoot") {
-        logShot(
-          bestAction.from[0],
-          bestAction.from[1],
-          bestAction.to[0],
-          bestAction.to[1]
-        );
-        playShootSound();
-        shootLaser(
-          bestAction.from[0],
-          bestAction.from[1],
-          bestAction.to[0],
-          bestAction.to[1]
-        );
-        setTimeout(() => {
-          board[bestAction.to[0]][bestAction.to[1]] = null;
-          showBlood(bestAction.to[0], bestAction.to[1]);
-          const key = `${bestAction.from[0]},${bestAction.from[1]}`;
-          reloadTimers[key] = reloadTurns;
-        }, 300);
-      }
+        // === ВЫСТРЕЛ ИИ — ТОЧНО ТАК ЖЕ, КАК У ИГРОКА ===
+        const [fromR, fromC] = bestAction.from;
+        const [toR, toC] = bestAction.to;
 
-      if (!checkKingAlive()) {
-        document.getElementById("status").textContent = `⚔️ Чёрные победили!`;
-        setTimeout(() => alert(`Чёрные победили!`), 100);
+        // Логируем выстрел
+        logShot(fromR, fromC, toR, toC);
+
+        // Проигрываем звук
+        playShootSound();
+
+        // Показываем лазер
+        shootLaser(fromR, fromC, toR, toC);
+
+        // Удаляем фигуру с задержкой (как у игрока)
+        setTimeout(() => {
+          board[toR][toC] = null;
+          showBlood(toR, toC);
+
+          // Устанавливаем перезарядку
+          const key = `${fromR},${fromC}`;
+          reloadTimers[key] = reloadTurns;
+
+          // Проверка победы
+          if (!checkKingAlive()) {
+            document.getElementById(
+              "status"
+            ).textContent = `⚔️ Чёрные победили!`;
+            setTimeout(() => alert(`Чёрные победили!`), 100);
+          } else {
+            currentPlayer = "white";
+            document.getElementById("status").textContent = "Ход белых";
+            decrementReloadTimers();
+            renderBoard();
+          }
+        }, 300);
       } else {
+        // Если ни ход, ни выстрел — просто передаём ход
         currentPlayer = "white";
         document.getElementById("status").textContent = "Ход белых";
         decrementReloadTimers();
@@ -720,7 +733,6 @@ function handleSquareClick(row, col, button) {
 
   // === ПКМ: Режим стрельбы ===
   if (button === 2) {
-    // Если клик по своей фигуре — выбираем её для стрельбы
     if (isOwnPiece) {
       clearHighlights();
       selectedPiece = [row, col];
@@ -730,7 +742,6 @@ function handleSquareClick(row, col, button) {
       return;
     }
 
-    // Если уже выбрана фигура для стрельбы — пытаемся выстрелить
     if (mode === "shoot" && selectedPiece) {
       const isValidTarget = shootTargets.some(
         (t) => t[0] === row && t[1] === col
@@ -744,11 +755,9 @@ function handleSquareClick(row, col, button) {
           board[row][col] = null;
           showBlood(row, col);
 
-          // Устанавливаем перезарядку
           const key = `${fromR},${fromC}`;
           reloadTimers[key] = reloadTurns;
 
-          // Проверка победы
           if (!checkKingAlive()) {
             const winner = currentPlayer === "white" ? "Белые" : "Чёрные";
             document.getElementById(
@@ -760,15 +769,21 @@ function handleSquareClick(row, col, button) {
             return;
           }
 
-          // Передача хода
-          currentPlayer = "black";
-          document.getElementById("status").textContent =
-            gameMode === "ai" ? "Ход чёрных (ИИ)..." : "Ход чёрных";
+          // === ИСПРАВЛЕНО: корректная смена хода ===
+          currentPlayer = currentPlayer === "white" ? "black" : "white";
+
+          if (gameMode === "ai" && currentPlayer === aiColor) {
+            document.getElementById("status").textContent =
+              "Ход чёрных (ИИ)...";
+          } else {
+            document.getElementById("status").textContent =
+              currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+          }
+
           decrementReloadTimers();
-          clearHighlights(); // ← КРИТИЧЕСКИ ВАЖНО: сброс выделения!
+          clearHighlights();
           renderBoard();
 
-          // Ход ИИ
           if (gameMode === "ai" && currentPlayer === aiColor) {
             setTimeout(aiMove, 500);
           }
@@ -777,7 +792,6 @@ function handleSquareClick(row, col, button) {
       }
     }
 
-    // Любой другой клик ПКМ — сброс
     clearHighlights();
     renderBoard();
     return;
@@ -785,7 +799,6 @@ function handleSquareClick(row, col, button) {
 
   // === ЛКМ: Режим хода ===
   if (button === 0) {
-    // Если уже выбрана фигура — пытаемся сходить
     if (mode === "move" && selectedPiece) {
       const isValidMove = possibleMoves.some(
         (m) => m[0] === row && m[1] === col
@@ -807,12 +820,18 @@ function handleSquareClick(row, col, button) {
           return;
         }
 
-        // Передача хода
-        currentPlayer = "black";
-        document.getElementById("status").textContent =
-          gameMode === "ai" ? "Ход чёрных (ИИ)..." : "Ход чёрных";
+        // === ИСПРАВЛЕНО: корректная смена хода ===
+        currentPlayer = currentPlayer === "white" ? "black" : "white";
+
+        if (gameMode === "ai" && currentPlayer === aiColor) {
+          document.getElementById("status").textContent = "Ход чёрных (ИИ)...";
+        } else {
+          document.getElementById("status").textContent =
+            currentPlayer === "white" ? "Ход белых" : "Ход чёрных";
+        }
+
         decrementReloadTimers();
-        clearHighlights(); // ← сброс после хода
+        clearHighlights();
         renderBoard();
 
         if (gameMode === "ai" && currentPlayer === aiColor) {
@@ -820,14 +839,12 @@ function handleSquareClick(row, col, button) {
         }
         return;
       } else {
-        // Клик мимо возможного хода — сброс
         clearHighlights();
         renderBoard();
         return;
       }
     }
 
-    // Если клик по своей фигуре — выбираем для хода
     if (isOwnPiece) {
       clearHighlights();
       selectedPiece = [row, col];
@@ -837,7 +854,6 @@ function handleSquareClick(row, col, button) {
       return;
     }
 
-    // Клик по чужой фигуре или пустой клетке — сброс
     clearHighlights();
     renderBoard();
     return;
