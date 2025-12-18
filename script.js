@@ -549,6 +549,42 @@ function makeMove(fromRow, fromCol, toRow, toCol) {
   addToPGN(notation);
 }
 
+function boardToFEN() {
+  let fen = "";
+  for (let row = 0; row < 8; row++) {
+    let empty = 0;
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece === null) {
+        empty++;
+      } else {
+        if (empty > 0) {
+          fen += empty;
+          empty = 0;
+        }
+        fen += piece;
+      }
+    }
+    if (empty > 0) {
+      fen += empty;
+    }
+    if (row < 7) fen += "/";
+  }
+
+  const activeColor = currentPlayer === "white" ? "w" : "b";
+  const castlingRights =
+    (castling.whiteKingside ? "K" : "") +
+      (castling.whiteQueenside ? "Q" : "") +
+      (castling.blackKingside ? "k" : "") +
+      (castling.blackQueenside ? "q" : "") || "-";
+
+  const enPassant = "-"; // Упрощённо
+  const halfmoveClock = "0";
+  const fullmoveNumber = moveNumber;
+
+  return `${fen} ${activeColor} ${castlingRights} ${enPassant} ${halfmoveClock} ${fullmoveNumber}`;
+}
+
 // === ЭФФЕКТЫ ===
 function playShootSound() {
   try {
@@ -685,6 +721,11 @@ function renderBoard() {
     document
       .querySelector(`.square[data-row="${r}"][data-col="${c}"]`)
       ?.classList.add("target");
+  }
+  // Обновляем FEN
+  const fenDisplay = document.getElementById("fen-display");
+  if (fenDisplay) {
+    fenDisplay.textContent = boardToFEN();
   }
 }
 
@@ -1057,3 +1098,17 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", () => {
   isDraggingAdvisor = false;
 });
+
+const copyBtn = document.getElementById("copy-fen");
+if (copyBtn) {
+  copyBtn.addEventListener("click", () => {
+    const fen = boardToFEN();
+    navigator.clipboard.writeText(fen).then(() => {
+      const originalText = copyBtn.textContent;
+      copyBtn.textContent = "Скопировано!";
+      setTimeout(() => {
+        copyBtn.textContent = originalText;
+      }, 1000);
+    });
+  });
+}
