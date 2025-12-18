@@ -9,6 +9,10 @@ let moveHistory,
 let reloadTurns = 1;
 let reloadTimers = {};
 let aiThinking = false;
+let advisorEnabled = false;
+let advisorWindow = null;
+let isDraggingAdvisor = false;
+let dragOffsetXAdvisor, dragOffsetYAdvisor;
 
 const pieceSymbols = {
   K: "♚",
@@ -54,6 +58,10 @@ function startGame(mode, level = null) {
   gameMode = mode;
   aiLevel = level;
   aiColor = "black";
+
+  // В режиме ИИ — включаем советы
+  advisorEnabled = mode === "ai";
+
   resetGame();
   document.getElementById("main-menu").style.display = "none";
 }
@@ -76,6 +84,56 @@ function resetGame() {
   };
   document.getElementById("status").textContent = "Ход белых";
   renderBoard();
+
+  // Обновляем советы
+  if (advisorEnabled) {
+    updateAdvisor();
+  }
+}
+
+function analyzePosition() {
+  if (typeof Chess === "undefined") {
+    return "Анализ недоступен";
+  }
+  try {
+    const chess = new Chess();
+
+    // Применяем все ходы из PGN
+    for (const notation of moveHistory) {
+      // Убираем номера ходов и комментарии
+      const clean = notation.replace(/^[0-9]+\.\s*|\s*\{.*?\}/g, "").trim();
+      if (clean && clean !== "...") {
+        try {
+          chess.move(clean);
+        } catch (e) {
+          console.warn("Invalid move in PGN:", clean);
+        }
+      }
+    }
+
+    // Получаем лучший ход
+    const moves = chess.moves({ verbose: true });
+    if (moves.length === 0) return "Нет доступных ходов";
+
+    // Сортируем по оценке (в реальности chess.js не даёт оценку, но мы можем выбрать первый)
+    const best = moves[0];
+    return `Лучший ход: ${best.from} → ${best.to} (${best.san})`;
+  } catch (e) {
+    console.error("Ошибка анализа:", e);
+    return "Не могу дать совет";
+  }
+}
+
+function updateAdvisor() {
+  if (!advisorEnabled) return;
+  const content = document.getElementById("advisor-content");
+  content.textContent = "Анализ...";
+
+  // Задержка для плавности
+  setTimeout(() => {
+    const advice = analyzePosition();
+    content.textContent = advice;
+  }, 100);
 }
 
 // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
@@ -856,6 +914,9 @@ function handleSquareClick(row, col, button) {
 
     clearHighlights();
     renderBoard();
+    if (advisorEnabled) {
+      setTimeout(updateAdvisor, 300);
+    }
     return;
   }
 }
@@ -931,3 +992,40 @@ document.head.appendChild(style);
 
 // === ЗАПУСК ===
 resetGame();
+
+// === ОКНО СОВЕТОВ ===
+document.getElementById("advisor-button").addEventListener("click", () => {
+  const win = document.getElementById("advisor-window");
+  win.style.display = win.style.display === "none" ? "flex" : "none";
+  if (win.style.display === "flex" && advisorEnabled) {
+    updateAdvisor();
+  }
+});
+
+document.getElementById("advisor-close").addEventListener("click", () => {
+  document.getElementById("advisor-window").style.display = "none";
+});
+
+// Drag advisor window
+const advisorHeader = document.getElementById("advisor-header");
+const advisorWin = document.getElementById("advisor-window");
+advisorHeader.addEventListener("mousedown", (e) => {
+  isDraggingAdvisor = true;
+  const rect = advisorWin.getBoundingClientRect();
+  dragOffsetXAdvisor = e.clientX - rect.left;
+  dragOffsetYAdvisor = e.clientY - rect.top;
+  e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (isDraggingAdvisor) {
+    advisorWin.style.left = e.clientX - dragOffsetXAdvisor + "px";
+    advisorWin.style.top = e.clientY - dragOffsetYAdvisor + "px";
+    advisorWin.style.right = "auto";
+    advisorWin.style.bottom = "auto";
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  isDraggingAdvisor = false;
+});

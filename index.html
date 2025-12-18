@@ -24,10 +24,15 @@
         <div>Перезарядка выстрела:</div>
         <div>
           <label
-            ><input type="radio" name="reload" value="1" checked /> 1 ход</label
+            ><input
+              type="radio"
+              name="reload"
+              value="3"
+              checked
+            />Быстрая</label
           >
-          <label><input type="radio" name="reload" value="2" /> 2 хода</label>
-          <label><input type="radio" name="reload" value="3" /> 3 хода</label>
+          <label><input type="radio" name="reload" value="6" />Обычнеая</label>
+          <label><input type="radio" name="reload" value="9" />Долгая</label>
         </div>
       </div>
 
@@ -86,6 +91,21 @@
       <div id="pgn-content"></div>
     </div>
 
+    <button id="advisor-button">🧠</button>
+    <div id="advisor-window">
+      <div id="advisor-header">
+        <span>Советы ИИ</span>
+        <button id="advisor-close">×</button>
+      </div>
+      <div id="advisor-content">Сделайте ход, чтобы увидеть советы.</div>
+    </div>
+
     <script src="script.js"></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"
+      integrity="sha512-xRllwz2gdZciIB+AkEbeq+gVhX8VB8XsfqeFbUh+SzHlN96dEduwtTuVuc2u9EROlmW9+yhRlxjif66ORpsgVA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
   </body>
 </html>
