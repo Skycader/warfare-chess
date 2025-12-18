@@ -486,25 +486,44 @@ function makeMove(fromRow, fromCol, toRow, toCol) {
   const toColChar = cols[toCol];
   const toRank = 8 - toRow;
 
+  // --- РОКИРОВКА ---
   if (piece === "K" && fromRow === 7 && fromCol === 4) {
     if (toCol === 6) {
       board[7][5] = "R";
       board[7][7] = null;
       notation = "O-O";
+
+      // Переносим таймер ладьи
+      if (reloadTimers["7,7"] > 0) {
+        reloadTimers["7,5"] = reloadTimers["7,7"];
+        delete reloadTimers["7,7"];
+      }
     } else if (toCol === 2) {
       board[7][3] = "R";
       board[7][0] = null;
       notation = "O-O-O";
+      if (reloadTimers["7,0"] > 0) {
+        reloadTimers["7,3"] = reloadTimers["7,0"];
+        delete reloadTimers["7,0"];
+      }
     }
   } else if (piece === "k" && fromRow === 0 && fromCol === 4) {
     if (toCol === 6) {
       board[0][5] = "r";
       board[0][7] = null;
       notation = "O-O";
+      if (reloadTimers["0,7"] > 0) {
+        reloadTimers["0,5"] = reloadTimers["0,7"];
+        delete reloadTimers["0,7"];
+      }
     } else if (toCol === 2) {
       board[0][3] = "r";
       board[0][0] = null;
       notation = "O-O-O";
+      if (reloadTimers["0,0"] > 0) {
+        reloadTimers["0,3"] = reloadTimers["0,0"];
+        delete reloadTimers["0,0"];
+      }
     }
   }
 
@@ -517,6 +536,15 @@ function makeMove(fromRow, fromCol, toRow, toCol) {
 
   board[toRow][toCol] = piece;
   board[fromRow][fromCol] = null;
+
+  // === ПЕРЕНЕСТИ ТАЙМЕР ПРИ ХОДЕ ===
+  const fromKey = `${fromRow},${fromCol}`;
+  const toKey = `${toRow},${toCol}`;
+  if (reloadTimers[fromKey] > 0) {
+    reloadTimers[toKey] = reloadTimers[fromKey];
+    delete reloadTimers[fromKey];
+  }
+
   updateCastling(fromRow, fromCol, toRow, toCol, piece);
   addToPGN(notation);
 }
